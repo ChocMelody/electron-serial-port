@@ -30,6 +30,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('new-log-entry', subscription)
     return () => ipcRenderer.removeListener('new-log-entry', subscription)
   },
+
+  // 监听 HTTP 日志条目
+  onHttpLogEntry: (callback: (entry: any) => void) => {
+    const subscription = (_event: IpcRendererEvent, entry: any) => callback(entry)
+    ipcRenderer.on('http-log-entry', subscription)
+    return () => ipcRenderer.removeListener('http-log-entry', subscription)
+  },
   
   // 移除所有监听器
   removeAllListeners: (channel: string) => {

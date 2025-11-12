@@ -37,18 +37,68 @@
       <template #header>
         <div class="card-header">
           <span>日志窗口</span>
-          <el-button @click="clearLogs" size="small">清空日志</el-button>
+          <div class="log-controls">
+            <el-button-group size="small">
+              <el-button :type="activeLogTab === 'serial' ? 'primary' : 'default'" @click="switchLogTab('serial')">
+                串口日志
+              </el-button>
+              <el-button :type="activeLogTab === 'http' ? 'primary' : 'default'" @click="switchLogTab('http')">
+                上传接口日志
+              </el-button>
+            </el-button-group>
+            <el-button @click="clearLogs" size="small">清空当前日志</el-button>
+          </div>
         </div>
       </template>
 
-      <div class="logs-container">
-        <DynamicScroller ref="virtualListRef" :items="reversedLogs" :min-item-size="30" key-field="id" PageMode>
+      <div v-if="activeLogTab === 'serial'" class="logs-container">
+        <DynamicScroller
+          ref="serialListRef"
+          :items="reversedSerialLogs"
+          :min-item-size="30"
+          key-field="id"
+          PageMode
+        >
           <template #default="{ item, index, active }">
-            <DynamicScrollerItem :item="item" :active="active" :size-dependencies="[item.message]" :data-index="index">
+            <DynamicScrollerItem
+              :item="item"
+              :active="active"
+              :size-dependencies="[item.message]"
+              :data-index="index"
+            >
               <div :class="['log-entry', item.type]">
                 <span class="timestamp">[{{ formatTime(item.timestamp) }}]</span>
                 <span class="type">[{{ item.type.toUpperCase() }}]</span>
                 <span class="message">{{ item.message }}</span>
+              </div>
+            </DynamicScrollerItem>
+          </template>
+        </DynamicScroller>
+      </div>
+
+      <div v-else class="logs-container http-logs-container">
+        <DynamicScroller
+          ref="httpListRef"
+          :items="reversedHttpLogs"
+          :min-item-size="60"
+          key-field="id"
+          PageMode
+        >
+          <template #default="{ item, index, active }">
+            <DynamicScrollerItem
+              :item="item"
+              :active="active"
+              :size-dependencies="[item.message, item.responseText]"
+              :data-index="index"
+            >
+              <div :class="['http-log-entry', item.code === 200 ? 'success' : 'error']">
+                <div class="http-log-meta">
+                  <span class="timestamp">[{{ formatTime(item.timestamp) }}]</span>
+                  <span class="http-code">code: {{ item.code }}</span>
+                </div>
+                <div class="http-log-message">{{ item.message }}</div>
+                <div v-if="item.error && item.code !== 200" class="http-log-error">错误: {{ item.error }}</div>
+                <pre v-if="item.responseText" class="http-log-response">{{ item.responseText }}</pre>
               </div>
             </DynamicScrollerItem>
           </template>
@@ -61,99 +111,155 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useConfigStore } from '../stores/config'
-import type { AppConfig, HttpConfig, LogEntry } from '../types/electron-api'
+import type { AppConfig, LogEntry, HttpLogEntry } from '../types/electron-api'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 
-const configStore = useConfigStore()
-
-// 串口状态
 const serialStatus = ref({
   text: '未连接',
   type: 'info'
 })
 
-// HTTP URL
 const httpUrl = ref('')
-
-// 是否已连接
 const isConnected = ref(false)
 
-// 日志列表
-const logs = ref<LogEntry[]>([])
+const serialLogs = ref<LogEntry[]>([])
+type HttpLogViewEntry = HttpLogEntry & { responseText: string }
+const httpLogs = ref<HttpLogViewEntry[]>([])
 
-// 最大日志条目数
-const MAX_LOG_ENTRIES = 1000
+const MAX_SERIAL_LOG_ENTRIES = 1000
+const MAX_HTTP_LOG_ENTRIES = 1000
 
-// 虚拟列表引用
-const virtualListRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
+const serialListRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
+const httpListRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 
-// 计算属性：反转日志顺序，使最新日志显示在最上方
-const reversedLogs = computed(() => {
-  return [...logs.value].reverse()
+const activeLogTab = ref<'serial' | 'http'>('serial')
+
+const reversedSerialLogs = computed(() => {
+  return [...serialLogs.value].reverse()
 })
 
-// 格式化时间
-const formatTime = (timestamp: Date) => {
-  return timestamp.toISOString().slice(0, 19).replace('T', ' ')
+const reversedHttpLogs = computed(() => {
+  return [...httpLogs.value].reverse()
+})
+
+const normalizeTimestamp = (value?: Date | string) => {
+  if (!value) {
+    return new Date()
+  }
+  if (value instanceof Date) {
+    return value
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? new Date() : date
 }
 
-// 更新串口状态显示
+const formatTime = (value: Date | string) => {
+  const date = normalizeTimestamp(value)
+  return date.toISOString().slice(0, 19).replace('T', ' ')
+}
+
+const focusLatest = (tab: 'serial' | 'http') => {
+  nextTick(() => {
+    if (tab === 'serial') {
+      serialListRef.value?.scrollToItem(0)
+    } else {
+      httpListRef.value?.scrollToItem(0)
+    }
+  })
+}
+
+const appendSerialLog = (type: string, message: string, timestamp?: Date | string, id?: number | string) => {
+  const entry: LogEntry = {
+    id: id ?? Date.now() + Math.random(),
+    type,
+    message,
+    timestamp: normalizeTimestamp(timestamp)
+  }
+
+  serialLogs.value.push(entry)
+
+  if (serialLogs.value.length > MAX_SERIAL_LOG_ENTRIES) {
+    serialLogs.value.splice(0, serialLogs.value.length - MAX_SERIAL_LOG_ENTRIES)
+  }
+
+  if (activeLogTab.value === 'serial') {
+    focusLatest('serial')
+  }
+}
+
+const buildResponseText = (payload: any) => {
+  if (payload === undefined || payload === null) {
+    return '无返回数据'
+  }
+
+  if (typeof payload === 'string') {
+    return payload
+  }
+
+  try {
+    return JSON.stringify(payload, null, 2)
+  } catch (error) {
+    return String(payload)
+  }
+}
+
+const appendHttpLog = (entry: HttpLogEntry) => {
+  const normalizedEntry: HttpLogViewEntry = {
+    ...entry,
+    id: entry.id ?? Date.now() + Math.random(),
+    timestamp: normalizeTimestamp(entry.timestamp),
+    responseText: buildResponseText(entry.response)
+  }
+
+  httpLogs.value.push(normalizedEntry)
+
+  if (httpLogs.value.length > MAX_HTTP_LOG_ENTRIES) {
+    httpLogs.value.splice(0, httpLogs.value.length - MAX_HTTP_LOG_ENTRIES)
+  }
+
+  if (activeLogTab.value === 'http') {
+    focusLatest('http')
+  }
+}
+
+const switchLogTab = (tab: 'serial' | 'http') => {
+  if (activeLogTab.value === tab) {
+    return
+  }
+  activeLogTab.value = tab
+  focusLatest(tab)
+}
+
 const updateSerialStatus = (status: string) => {
   switch (status) {
     case 'connected':
       serialStatus.value = { text: '已连接', type: 'success' }
       isConnected.value = true
-      addLog('success', '串口连接成功')
+      appendSerialLog('success', '串口连接成功')
       break
     case 'disconnected':
       serialStatus.value = { text: '未连接', type: 'info' }
       isConnected.value = false
-      addLog('info', '串口连接已断开')
+      appendSerialLog('info', '串口连接已断开')
       break
     case 'error':
       serialStatus.value = { text: '连接错误', type: 'danger' }
       isConnected.value = false
+      appendSerialLog('error', '串口连接异常')
       break
     default:
       serialStatus.value = { text: status, type: 'info' }
   }
 }
 
-// 添加日志条目
-const addLog = (type: string, message: string) => {
-  const entry: LogEntry = {
-    id: Date.now() + Math.random(), // 添加唯一ID用于虚拟滚动
-    type,
-    message,
-    timestamp: new Date()
-  }
-
-  logs.value.push(entry)
-
-  // 如果日志条目超过最大数量，删除最旧的条目
-  if (logs.value.length > MAX_LOG_ENTRIES) {
-    logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES)
-  }
-
-  // 自动滚动到顶部以显示最新的日志条目
-  nextTick(() => {
-    if (virtualListRef.value) {
-      // 滚动到第一项（因为列表已经反转，第一项就是最新的日志）
-      virtualListRef.value.scrollToItem(0)
-    }
-  })
-}
-
-// 切换连接状态
 const toggleConnection = async () => {
   try {
     if (isConnected.value) {
       await window.api.disconnect()
     } else {
       const result = await window.api.connect()
-      console.log('connect result:', result);
+      console.log('connect result:', result)
 
       if (!result) {
         ElMessage.error('连接失败')
@@ -165,14 +271,19 @@ const toggleConnection = async () => {
   }
 }
 
-// 清空日志
 const clearLogs = () => {
-  logs.value = []
+  if (activeLogTab.value === 'serial') {
+    serialLogs.value = []
+    ElMessage.success('串口日志已清空')
+  } else {
+    httpLogs.value = []
+    ElMessage.success('上传接口日志已清空')
+  }
 }
 
-// 组件挂载时初始化
+const disposers: Array<() => void> = []
+
 onMounted(async () => {
-  // 获取当前配置
   try {
     const config: AppConfig = await window.api.getConfig()
     if (config.http) {
@@ -182,21 +293,30 @@ onMounted(async () => {
     ElMessage.error('获取配置失败: ' + error.message)
   }
 
-  // 监听串口状态更新
-  window.api.onSerialStatusUpdate((status: string) => {
-    updateSerialStatus(status)
-  })
+  disposers.push(
+    window.api.onSerialStatusUpdate((status: string) => {
+      updateSerialStatus(status)
+    })
+  )
 
-  // 监听新日志条目
-  window.api.onNewLogEntry((entry: LogEntry) => {
-    addLog(entry.type, entry.message)
-  })
+  disposers.push(
+    window.api.onNewLogEntry((entry: LogEntry) => {
+      appendSerialLog(entry.type, entry.message, entry.timestamp, entry.id)
+    })
+  )
+
+  disposers.push(
+    window.api.onHttpLogEntry((entry: HttpLogEntry) => {
+      appendHttpLog(entry)
+    })
+  )
 })
 
-// 组件卸载时清理监听器
 onUnmounted(() => {
+  disposers.forEach((dispose) => dispose && dispose())
   window.api.removeAllListeners('serial-status-update')
   window.api.removeAllListeners('new-log-entry')
+  window.api.removeAllListeners('http-log-entry')
 })
 </script>
 
@@ -242,6 +362,12 @@ onUnmounted(() => {
 
 .logs-card :deep(.el-card__body) {
   height: 100%;
+}
+
+.log-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .logs-container {
@@ -291,5 +417,57 @@ onUnmounted(() => {
 
 .actions {
   text-align: center;
+}
+
+.http-logs-container {
+  font-family: monospace;
+}
+
+.http-log-entry {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background-color: #f5f7fa;
+  line-height: 1.5;
+}
+
+.http-log-entry.success {
+  border-color: #e1f3d8;
+  background-color: #f0f9eb;
+}
+
+.http-log-entry.error {
+  border-color: #fde2e2;
+  background-color: #fef0f0;
+}
+
+.http-log-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.http-log-message {
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.http-log-error {
+  color: #f56c6c;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.http-log-response {
+  margin: 0;
+  padding: 8px;
+  background-color: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
 }
 </style>

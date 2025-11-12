@@ -29,7 +29,17 @@ export interface LogEntry {
   id?: number | string;
   type: string;
   message: string;
-  timestamp: Date;
+  timestamp: Date | string;
+}
+
+export interface HttpLogEntry {
+  id?: number | string;
+  code: number;
+  message: string;
+  response?: any;
+  request?: any;
+  error?: string;
+  timestamp: Date | string;
 }
 
 export interface ElectronAPI {
@@ -38,8 +48,9 @@ export interface ElectronAPI {
   setConfig: (config: AppConfig) => Promise<void>;
   connect: () => Promise<boolean>;
   disconnect: () => Promise<void>;
-  onSerialStatusUpdate: (callback: (status: string) => void) => void;
-  onNewLogEntry: (callback: (entry: LogEntry) => void) => void;
+  onSerialStatusUpdate: (callback: (status: string) => void) => () => void;
+  onNewLogEntry: (callback: (entry: LogEntry) => void) => () => void;
+  onHttpLogEntry: (callback: (entry: HttpLogEntry) => void) => () => void;
   removeAllListeners: (event: string) => void;
 }
 

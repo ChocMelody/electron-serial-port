@@ -158,11 +158,6 @@ export class SerialPortService {
         timestamp: new Date().toISOString(),
       });
     }
-
-    // 直接使用 this.httpService
-    if (this.httpService) {
-      (this.httpService as any).sendLog(type as 'info' | 'error', message);
-    }
   }
 
   private addToBuffer(data: Buffer) {
