@@ -88,8 +88,8 @@ export class SerialPortService {
       });
 
       this.serialPort.on('data', (data) => {
-        console.log('raw data:', data);
-        this.sendLog('data', `收到数据: ${data.toString('hex')}`);
+        console.log('raw data:', data.toString());
+        this.sendLog('data', `收到数据: ${data.toString()}`);
         this.addToBuffer(data);
       });
 
@@ -161,7 +161,7 @@ export class SerialPortService {
 
     // 直接使用 this.httpService
     if (this.httpService) {
-      await this.httpService.sendLog(type as 'info' | 'error', message);
+      (this.httpService as any).sendLog(type as 'info' | 'error', message);
     }
   }
 

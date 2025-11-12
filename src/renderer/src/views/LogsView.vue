@@ -45,28 +45,40 @@
       </template>
       
       <div class="logs-container">
-        <virtual-list
+        <DynamicScroller
           ref="virtualListRef"
-          :data-key="'id'"
-          :data-sources="logs"
-          :data-component="logItemComponent"
-          :keeps="50"
-          :estimate-size="30"
-          @scroll="handleScroll"
-        />
+          :items="logs"
+          :min-item-size="30"
+          key-field="id"
+          PageMode
+        >
+          <template #default="{ item, index, active }">
+            <DynamicScrollerItem
+              :item="item"
+              :active="active"
+              :size-dependencies="[item.message]"
+              :data-index="index"
+            >
+              <div :class="['log-entry', item.type]">
+                <span class="timestamp">[{{ formatTime(item.timestamp) }}]</span>
+                <span class="type">[{{ item.type.toUpperCase() }}]</span>
+                <span class="message">{{ item.message }}</span>
+              </div>
+            </DynamicScrollerItem>
+          </template>
+        </DynamicScroller>
       </div>
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, shallowRef, defineAsyncComponent } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useConfigStore } from '../stores/config'
 import type { AppConfig, HttpConfig, LogEntry } from '../types/electron-api'
-
-// 异步加载VirtualList组件
-const VirtualList = defineAsyncComponent(() => import('vue-virtual-scroll-list'))
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 
 const configStore = useConfigStore()
 
@@ -89,19 +101,12 @@ const logs = ref<LogEntry[]>([])
 const MAX_LOG_ENTRIES = 1000
 
 // 虚拟列表引用
-const virtualListRef = ref<InstanceType<typeof VirtualList> | null>(null)
+const virtualListRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 
-// 日志条目组件
-const logItemComponent = shallowRef({
-  props: ['source'],
-  template: `
-    <div :class="['log-entry', source.type]">
-      <span class="timestamp">[{{ formatTime(source.timestamp) }}]</span>
-      <span class="type">[{{ source.type.toUpperCase() }}]</span>
-      <span class="message">{{ source.message }}</span>
-    </div>
-  `
-})
+// 格式化时间
+const formatTime = (timestamp: Date) => {
+  return timestamp.toISOString().slice(0, 19).replace('T', ' ')
+}
 
 // 更新串口状态显示
 const updateSerialStatus = (status: string) => {
@@ -144,14 +149,10 @@ const addLog = (type: string, message: string) => {
   // 滚动到底部
   nextTick(() => {
     if (virtualListRef.value) {
-      virtualListRef.value.scrollToBottom()
+      // 使用 DynamicScroller 的滚动方法
+      virtualListRef.value.scrollToItem(logs.value.length - 1)
     }
   })
-}
-
-// 格式化时间
-const formatTime = (timestamp: Date) => {
-  return timestamp.toISOString().slice(0, 19).replace('T', ' ')
 }
 
 // 切换连接状态
@@ -176,11 +177,6 @@ const toggleConnection = async () => {
 // 清空日志
 const clearLogs = () => {
   logs.value = []
-}
-
-// 处理滚动事件
-const handleScroll = () => {
-  // 可以在这里添加滚动相关的逻辑
 }
 
 // 组件挂载时初始化
@@ -259,14 +255,10 @@ onUnmounted(() => {
   font-family: monospace;
 }
 
-:deep(.virtual-list) {
-  height: 100% !important;
-  padding: 10px;
-}
-
 .log-entry {
   margin-bottom: 5px;
   line-height: 1.4;
+  padding: 5px;
 }
 
 .log-entry .timestamp {

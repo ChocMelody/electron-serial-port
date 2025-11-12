@@ -5,6 +5,27 @@ import { AppModule } from './nestjs/app.module'
 import { INestApplication } from '@nestjs/common'
 import { initializeIpcHandlers } from './ipc/handlers'
 
+// 添加热重载功能
+if (process.env.NODE_ENV === 'development') {
+  try {
+    require('electron-reloader')(module, {
+      debug: true,
+      watchRenderer: true,
+      // 明确指定要监视的文件和目录
+      ignore: [
+        'node_modules',
+        'dist',
+        'release',
+        '.git',
+        '*.log'
+      ]
+    });
+    console.log('[Hot Reload] Electron reloader initialized');
+  } catch (error) {
+    console.error('[Hot Reload] Failed to initialize electron-reloader:', error);
+  }
+}
+
 let mainWindow: BrowserWindow | null = null
 let nestApp: INestApplication | null = null
 
