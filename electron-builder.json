@@ -1,0 +1,29 @@
+{
+  "appId": "com.electron.serial-port-http",
+  "productName": "Serial Port HTTP Forwarder",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "!**/*.map"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${productName}-${version}-Setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "shortcutName": "Serial Port HTTP Forwarder"
+  },
+  "publish": null
+}
