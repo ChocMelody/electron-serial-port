@@ -1,14 +1,14 @@
 <template>
   <div class="logs-view">
     <h2>运行日志</h2>
-    
+
     <el-card class="status-card">
       <template #header>
         <div class="card-header">
           <span>状态信息</span>
         </div>
       </template>
-      
+
       <div class="status-info">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -25,17 +25,14 @@
           </el-col>
         </el-row>
       </div>
-      
+
       <div class="actions">
-        <el-button 
-          :type="isConnected ? 'danger' : 'primary'" 
-          @click="toggleConnection"
-        >
+        <el-button :type="isConnected ? 'danger' : 'primary'" @click="toggleConnection">
           {{ isConnected ? '断开' : '连接' }}
         </el-button>
       </div>
     </el-card>
-    
+
     <el-card class="logs-card">
       <template #header>
         <div class="card-header">
@@ -43,22 +40,11 @@
           <el-button @click="clearLogs" size="small">清空日志</el-button>
         </div>
       </template>
-      
+
       <div class="logs-container">
-        <DynamicScroller
-          ref="virtualListRef"
-          :items="logs"
-          :min-item-size="30"
-          key-field="id"
-          PageMode
-        >
+        <DynamicScroller ref="virtualListRef" :items="reversedLogs" :min-item-size="30" key-field="id" PageMode>
           <template #default="{ item, index, active }">
-            <DynamicScrollerItem
-              :item="item"
-              :active="active"
-              :size-dependencies="[item.message]"
-              :data-index="index"
-            >
+            <DynamicScrollerItem :item="item" :active="active" :size-dependencies="[item.message]" :data-index="index">
               <div :class="['log-entry', item.type]">
                 <span class="timestamp">[{{ formatTime(item.timestamp) }}]</span>
                 <span class="type">[{{ item.type.toUpperCase() }}]</span>
@@ -103,6 +89,11 @@ const MAX_LOG_ENTRIES = 1000
 // 虚拟列表引用
 const virtualListRef = ref<InstanceType<typeof DynamicScroller> | null>(null)
 
+// 计算属性：反转日志顺序，使最新日志显示在最上方
+const reversedLogs = computed(() => {
+  return [...logs.value].reverse()
+})
+
 // 格式化时间
 const formatTime = (timestamp: Date) => {
   return timestamp.toISOString().slice(0, 19).replace('T', ' ')
@@ -138,19 +129,19 @@ const addLog = (type: string, message: string) => {
     message,
     timestamp: new Date()
   }
-  
+
   logs.value.push(entry)
-  
+
   // 如果日志条目超过最大数量，删除最旧的条目
   if (logs.value.length > MAX_LOG_ENTRIES) {
     logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES)
   }
-  
-  // 滚动到底部
+
+  // 自动滚动到顶部以显示最新的日志条目
   nextTick(() => {
     if (virtualListRef.value) {
-      // 使用 DynamicScroller 的滚动方法
-      virtualListRef.value.scrollToItem(logs.value.length - 1)
+      // 滚动到第一项（因为列表已经反转，第一项就是最新的日志）
+      virtualListRef.value.scrollToItem(0)
     }
   })
 }
@@ -163,7 +154,7 @@ const toggleConnection = async () => {
     } else {
       const result = await window.api.connect()
       console.log('connect result:', result);
-      
+
       if (!result) {
         ElMessage.error('连接失败')
         return
@@ -190,12 +181,12 @@ onMounted(async () => {
   } catch (error: any) {
     ElMessage.error('获取配置失败: ' + error.message)
   }
-  
+
   // 监听串口状态更新
   window.api.onSerialStatusUpdate((status: string) => {
     updateSerialStatus(status)
   })
-  
+
   // 监听新日志条目
   window.api.onNewLogEntry((entry: LogEntry) => {
     addLog(entry.type, entry.message)
@@ -225,6 +216,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   font-weight: bold;
+  height: 100%;
 }
 
 .status-info {
@@ -245,6 +237,11 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100%;
+}
+
+.logs-card :deep(.el-card__body) {
+  height: 100%;
 }
 
 .logs-container {
@@ -253,6 +250,8 @@ onUnmounted(() => {
   border-radius: 4px;
   background-color: #fff;
   font-family: monospace;
+  overflow-y: auto;
+  height: 100%;
 }
 
 .log-entry {
